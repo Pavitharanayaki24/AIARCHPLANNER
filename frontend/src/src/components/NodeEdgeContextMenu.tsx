@@ -6,44 +6,45 @@ interface NodeEdgeContextMenuProps {
   x: number;
   y: number;
   onClose: () => void;
+  onCopy: (elements: { nodes: Node[]; edges: Edge[] }) => void;
+  selectedNodes: Node[];
+  selectedEdges: Edge[];
 }
 
-const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose }) => {
+const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ 
+  x, 
+  y, 
+  onClose,
+  onCopy,
+  selectedNodes,
+  selectedEdges
+}) => {
   const { getNode, getNodes, getEdges, setNodes, setEdges, deleteElements } = useReactFlow();
-  const [copiedElements, setCopiedElements] = React.useState<{ nodes: Node[]; edges: Edge[] } | null>(null);
-
-  const getSelectedElements = () => {
-    const nodes = getNodes().filter(node => node.selected);
-    const edges = getEdges().filter(edge => edge.selected);
-    return { nodes, edges };
-  };
 
   const handleDelete = () => {
-    const { nodes, edges } = getSelectedElements();
-    deleteElements({ nodes, edges });
+    deleteElements({ nodes: selectedNodes, edges: selectedEdges });
     onClose();
   };
 
   const handleCut = () => {
-    const elements = getSelectedElements();
-    setCopiedElements(elements);
+    const elements = { nodes: selectedNodes, edges: selectedEdges };
+    onCopy(elements);
     deleteElements(elements);
     onClose();
   };
 
   const handleCopy = () => {
-    const elements = getSelectedElements();
-    setCopiedElements(elements);
+    const elements = { nodes: selectedNodes, edges: selectedEdges };
+    onCopy(elements);
     onClose();
   };
 
   const handleCopyAsImage = async () => {
-    const { nodes } = getSelectedElements();
-    if (nodes.length === 0) return;
+    if (selectedNodes.length === 0) return;
 
     try {
       // Find the node element in the DOM
-      const nodeElement = document.querySelector(`[data-id="${nodes[0].id}"]`);
+      const nodeElement = document.querySelector(`[data-id="${selectedNodes[0].id}"]`);
       if (!nodeElement) return;
 
       // Convert the node to PNG
@@ -54,7 +55,7 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose
 
       // Create a temporary link to download the image
       const link = document.createElement('a');
-      link.download = `node-${nodes[0].id}.png`;
+      link.download = `node-${selectedNodes[0].id}.png`;
       link.href = dataUrl;
       link.click();
     } catch (error) {
@@ -64,10 +65,8 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose
   };
 
   const handleDuplicate = () => {
-    const { nodes, edges } = getSelectedElements();
-    
     // Create new nodes with unique IDs
-    const newNodes = nodes.map(node => ({
+    const newNodes = selectedNodes.map(node => ({
       ...node,
       id: `${node.id}-copy-${Math.random().toString(36).substr(2, 9)}`,
       position: {
@@ -77,12 +76,18 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose
       selected: false
     }));
 
+    // Create a mapping of old node IDs to new node IDs
+    const nodeMapping = selectedNodes.reduce((mapping, node, index) => {
+      mapping[node.id] = newNodes[index].id;
+      return mapping;
+    }, {} as { [key: string]: string });
+
     // Create new edges with updated source/target IDs
-    const newEdges = edges.map(edge => ({
+    const newEdges = selectedEdges.map(edge => ({
       ...edge,
       id: `${edge.id}-copy-${Math.random().toString(36).substr(2, 9)}`,
-      source: edge.source.includes('-copy-') ? edge.source : `${edge.source}-copy`,
-      target: edge.target.includes('-copy-') ? edge.target : `${edge.target}-copy`,
+      source: nodeMapping[edge.source] || edge.source,
+      target: nodeMapping[edge.target] || edge.target,
       selected: false
     }));
 
@@ -92,11 +97,9 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose
   };
 
   const handleLockUnlock = () => {
-    const { nodes, edges } = getSelectedElements();
-    
     setNodes(prevNodes => 
       prevNodes.map(node => {
-        if (nodes.find(n => n.id === node.id)) {
+        if (selectedNodes.find(n => n.id === node.id)) {
           return {
             ...node,
             draggable: !node.draggable,
@@ -114,7 +117,7 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose
 
     setEdges(prevEdges =>
       prevEdges.map(edge => {
-        if (edges.find(e => e.id === edge.id)) {
+        if (selectedEdges.find(e => e.id === edge.id)) {
           return {
             ...edge,
             interactionWidth: edge.interactionWidth === 0 ? 20 : 0,
@@ -187,7 +190,6 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({ x, y, onClose
               onClick={(e) => {
                 e.stopPropagation();
                 item.action();
-                onClose();
               }}
             >
               {item.label}

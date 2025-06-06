@@ -304,64 +304,94 @@ function ShapesProExampleApp({
     const selectedNodes = nodes.filter(node => node.selected);
     const selectedEdges = edges.filter(edge => edge.selected);
     if (selectedNodes.length > 0 || selectedEdges.length > 0) {
-      setCopiedElements({ nodes: selectedNodes, edges: selectedEdges });
+      const copiedData = { nodes: selectedNodes, edges: selectedEdges };
+      setCopiedElements(copiedData);
+      // Store in localStorage as backup
+      try {
+        localStorage.setItem('copiedElements', JSON.stringify(copiedData));
+      } catch (e) {
+        console.error('Failed to store copied elements in localStorage:', e);
+      }
     }
   };
 
   const handlePaste = useCallback((x: number, y: number) => {
-    if (!copiedElements || !copiedElements.nodes.length) return;
+    // Try to get copiedElements from state or localStorage
+    let elementsToPaste = copiedElements;
+    if (!elementsToPaste) {
+      try {
+        const stored = localStorage.getItem('copiedElements');
+        if (stored) {
+          elementsToPaste = JSON.parse(stored);
+        }
+      } catch (e) {
+        console.error('Failed to retrieve copied elements from localStorage:', e);
+      }
+    }
+
+    if (!elementsToPaste || !elementsToPaste.nodes.length) return;
 
     // Calculate the center position of copied nodes
-    const nodesCenterX = copiedElements.nodes.reduce((sum, node) => sum + node.position.x, 0) / copiedElements.nodes.length;
-    const nodesCenterY = copiedElements.nodes.reduce((sum, node) => sum + node.position.y, 0) / copiedElements.nodes.length;
+    const nodesCenterX = elementsToPaste.nodes.reduce((sum, node) => sum + node.position.x, 0) / elementsToPaste.nodes.length;
+    const nodesCenterY = elementsToPaste.nodes.reduce((sum, node) => sum + node.position.y, 0) / elementsToPaste.nodes.length;
 
-    const offsetX = x - nodesCenterX;
-    const offsetY = y - nodesCenterY;
+    // Convert screen coordinates to flow coordinates
+    const flowPosition = screenToFlowPosition({ x, y });
+    const offsetX = flowPosition.x - nodesCenterX;
+    const offsetY = flowPosition.y - nodesCenterY;
 
     // Create new nodes with updated positions and IDs
-    const newNodes = copiedElements.nodes.map(node => ({
+    const newNodes = elementsToPaste.nodes.map(node => ({
       ...node,
       id: `${node.id}-copy-${Math.random().toString(36).substr(2, 9)}`,
       position: {
         x: node.position.x + offsetX,
         y: node.position.y + offsetY
       },
-      selected: false,
+      selected: true,
       data: { ...node.data }
-    })) as Node[];
+    })) as ShapeNode[];
 
     // Create a mapping of old node IDs to new node IDs
-    const nodeMapping = copiedElements.nodes.reduce((mapping, node, index) => {
+    const nodeMapping = elementsToPaste.nodes.reduce((mapping, node, index) => {
       mapping[node.id] = newNodes[index].id;
       return mapping;
     }, {} as { [key: string]: string });
 
     // Create new edges with updated source/target IDs
-    const newEdges = copiedElements.edges.map(edge => ({
+    const newEdges = elementsToPaste.edges.map(edge => ({
       ...edge,
       id: `${edge.id}-copy-${Math.random().toString(36).substr(2, 9)}`,
       source: nodeMapping[edge.source] || edge.source,
       target: nodeMapping[edge.target] || edge.target,
-      selected: false
+      selected: true
     })) as Edge[];
 
+    // Deselect all existing elements
+    const deselectedNodes = nodes.map(n => ({ ...n, selected: false }));
+    const deselectedEdges = edges.map(e => ({ ...e, selected: false }));
+
     // Add the new nodes and edges to the flow
-    setSortedNodes(prev => [...prev, ...newNodes]);
-    setEdges(prev => [...prev, ...newEdges]);
+    setSortedNodes([...deselectedNodes, ...newNodes]);
+    setNodes([...deselectedNodes, ...newNodes]);
+    setEdges([...deselectedEdges, ...newEdges]);
+    
+    // Update selection state
+    setSelectedNodes(newNodes);
+    setSelectedEdges(newEdges);
 
     // Push to history for undo/redo
-    pushToHistory([...nodes, ...newNodes], [...edges, ...newEdges]);
-
-    // Clear copiedElements after pasting
-    setCopiedElements(null);
-  }, [copiedElements, nodes, edges, pushToHistory]);
+    pushToHistory([...deselectedNodes, ...newNodes], [...deselectedEdges, ...newEdges]);
+  }, [copiedElements, nodes, edges, pushToHistory, screenToFlowPosition]);
 
   const selectAllEdges = () => {
     const updatedEdges = edges.map(edge => ({ ...edge, selected: true }));
     setEdges(updatedEdges);
     setSelectedEdges(updatedEdges);
     // Clear node selection when selecting all edges
-    setSortedNodes(nodes.map(node => ({ ...node, selected: false })));
+    const updatedNodes = nodes.map(node => ({ ...node, selected: false }));
+    setSortedNodes(updatedNodes);
+    setNodes(updatedNodes);
     setSelectedNodes([]);
     setSelectedNode(null);
   };
@@ -380,9 +410,15 @@ function ShapesProExampleApp({
     const updatedEdges = edges.map(edge => ({ ...edge, selected: true }));
     
     setSortedNodes(updatedNodes);
+    setNodes(updatedNodes);
     setEdges(updatedEdges);
     setSelectedNodes(updatedNodes);
     setSelectedEdges(updatedEdges);
+    
+    // Ensure React Flow's internal state is updated
+    const { setNodes: setRFNodes, setEdges: setRFEdges } = useReactFlow();
+    setRFNodes(updatedNodes);
+    setRFEdges(updatedEdges);
   };  
   
 const deleteSelected = () => {
@@ -1225,7 +1261,15 @@ const deleteSelected = () => {
             x={nodeEdgeContextMenu.x}
             y={nodeEdgeContextMenu.y}
             onClose={() => setNodeEdgeContextMenu(null)}
-            onCopy={(elements) => setCopiedElements(elements)}
+            onCopy={(elements) => {
+              setCopiedElements(elements);
+              // Store in localStorage as backup
+              try {
+                localStorage.setItem('copiedElements', JSON.stringify(elements));
+              } catch (e) {
+                console.error('Failed to store copied elements in localStorage:', e);
+              }
+            }}
             selectedNodes={nodes.filter(node => node.selected)}
             selectedEdges={edges.filter(edge => edge.selected)}
           />
