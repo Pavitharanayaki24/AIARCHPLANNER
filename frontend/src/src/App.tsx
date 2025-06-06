@@ -301,10 +301,28 @@ function ShapesProExampleApp({
   };
 
   const copy = () => {
-    const selectedNodes = nodes.filter(node => node.selected);
-    const selectedEdges = edges.filter(edge => edge.selected);
+    // If there are selected nodes/edges, copy only those
     if (selectedNodes.length > 0 || selectedEdges.length > 0) {
-      const copiedData = { nodes: selectedNodes, edges: selectedEdges };
+      const copiedData = { 
+        nodes: selectedNodes,
+        edges: selectedEdges.filter(edge => 
+          selectedNodes.some(node => node.id === edge.source) && 
+          selectedNodes.some(node => node.id === edge.target)
+        )
+      };
+      setCopiedElements(copiedData);
+      // Store in localStorage as backup
+      try {
+        localStorage.setItem('copiedElements', JSON.stringify(copiedData));
+      } catch (e) {
+        console.error('Failed to store copied elements in localStorage:', e);
+      }
+    } else {
+      // If nothing is selected, copy all nodes and edges
+      const copiedData = { 
+        nodes: nodes,
+        edges: edges
+      };
       setCopiedElements(copiedData);
       // Store in localStorage as backup
       try {
@@ -1153,7 +1171,7 @@ const deleteSelected = () => {
         selectAllEdges={selectAllEdges}
         canUndo={history.length > 0}
         canPaste={!!copiedElements}
-        canCopy={selectedNodes.length > 0 || selectedEdges.length > 0}
+        canCopy={true}  // Always allow copying since we can copy all or selected elements
       />
     );
   };
