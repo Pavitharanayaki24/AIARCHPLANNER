@@ -1,6 +1,25 @@
 import React from 'react';
 import { useReactFlow, Node, Edge } from '@xyflow/react';
 import { toPng } from 'html-to-image';
+import {
+  TrashIcon,
+  ScissorsIcon,
+  DocumentDuplicateIcon,
+  CameraIcon,
+  Square2StackIcon,
+  LockClosedIcon,
+  PaintBrushIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
+  ChevronUpIcon,
+  ChevronDownIcon
+} from '@heroicons/react/24/outline';
+
+interface MenuItem {
+  label: string;
+  action: () => void;
+  icon: any; // Using any type for now to avoid TypeScript issues
+}
 
 interface NodeEdgeContextMenuProps {
   x: number;
@@ -133,23 +152,18 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({
     onClose();
   };
 
-  const menuItems = [
-    { label: 'Delete', action: handleDelete },
-    { label: 'Cut', action: handleCut },
-    { label: 'Copy', action: handleCopy },
-    { label: 'Copy as Image', action: handleCopyAsImage },
-    { label: 'Duplicate', action: handleDuplicate },
-    { label: 'Lock/Unlock', action: handleLockUnlock },
-    { label: 'Set as Default Style', action: () => console.log('Set as Default Style') },
-    { label: 'To Front', action: () => console.log('To Front') },
-    { label: 'To Back', action: () => console.log('To Back') },
-    { label: 'Bring Forward', action: () => console.log('Bring Forward') },
-    { label: 'Send Backward', action: () => console.log('Send Backward') },
-    { label: 'Edit Style...', action: () => console.log('Edit Style') },
-    { label: 'Edit Data...', action: () => console.log('Edit Data') },
-    { label: 'Edit Link...', action: () => console.log('Edit Link') },
-    { label: 'Edit Connection Points...', action: () => console.log('Edit Connection Points') },
-    { label: 'Add to Scratchpad', action: () => console.log('Add to Scratchpad') },
+  const menuItems: MenuItem[] = [
+    { label: 'Delete', action: handleDelete, icon: TrashIcon },
+    { label: 'Cut', action: handleCut, icon: ScissorsIcon },
+    { label: 'Copy', action: handleCopy, icon: DocumentDuplicateIcon },
+    { label: 'Copy as Image', action: handleCopyAsImage, icon: CameraIcon },
+    { label: 'Duplicate', action: handleDuplicate, icon: Square2StackIcon },
+    { label: 'Lock/Unlock', action: handleLockUnlock, icon: LockClosedIcon },
+    { label: 'Set as Default Style', action: () => console.log('Set as Default Style'), icon: PaintBrushIcon },
+    { label: 'To Front', action: () => console.log('To Front'), icon: ArrowUpIcon },
+    { label: 'To Back', action: () => console.log('To Back'), icon: ArrowDownIcon },
+    { label: 'Bring Forward', action: () => console.log('Bring Forward'), icon: ChevronUpIcon },
+    { label: 'Send Backward', action: () => console.log('Send Backward'), icon: ChevronDownIcon }
   ];
 
   // Close menu when clicking outside
@@ -179,19 +193,19 @@ const NodeEdgeContextMenu: React.FC<NodeEdgeContextMenuProps> = ({
           'Duplicate',
           'Lock/Unlock',
           'Set as Default Style',
-          'Send Backward',
-          'Edit Connection Points...'
+          'Send Backward'
         ].includes(item.label);
 
         return (
           <React.Fragment key={index}>
             <div
-              className="px-4 py-1.5 hover:bg-gray-100 cursor-pointer text-sm select-none"
+              className="px-4 py-1.5 hover:bg-gray-100 cursor-pointer text-sm select-none flex items-center gap-2"
               onClick={(e) => {
                 e.stopPropagation();
                 item.action();
               }}
             >
+              <item.icon className="w-4 h-4 text-gray-500" />
               {item.label}
             </div>
             {addSeparator && <div className="border-t border-gray-200 my-1" />}
