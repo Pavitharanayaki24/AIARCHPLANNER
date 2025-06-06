@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { useReactFlow } from '@xyflow/react';
 
 interface ContextMenuProps {
@@ -30,6 +30,26 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
   canPaste,
   canCopy
 }) => {
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        onClose();
+      }
+    };
+
+    // Add click and contextmenu event listeners
+    document.addEventListener('click', handleClickOutside);
+    document.addEventListener('contextmenu', handleClickOutside);
+
+    return () => {
+      // Clean up event listeners
+      document.removeEventListener('click', handleClickOutside);
+      document.removeEventListener('contextmenu', handleClickOutside);
+    };
+  }, [onClose]);
+
   const menuItems = [
     { label: 'Undo', action: undo, disabled: !canUndo },
     { label: 'Copy', action: copy, disabled: !canCopy },
@@ -41,6 +61,7 @@ const ContextMenu: React.FC<ContextMenuProps> = ({
 
   return (
     <div
+      ref={menuRef}
       className="fixed bg-white shadow-lg rounded-md py-2 min-w-[180px] z-50"
       style={{
         left: x,

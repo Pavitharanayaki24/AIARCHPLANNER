@@ -1070,6 +1070,9 @@ const deleteSelected = () => {
   const onContextMenu = useCallback(
     (event: React.MouseEvent) => {
       event.preventDefault();
+      event.stopPropagation();
+      // Close any existing context menus first
+      setNodeEdgeContextMenu(null);
       setContextMenu({
         x: event.clientX,
         y: event.clientY,
@@ -1079,22 +1082,23 @@ const deleteSelected = () => {
   );
 
   // Close context menu
-  const onPaneClick = useCallback(() => {
+  const onPaneClick = useCallback((event: React.MouseEvent) => {
+    event.stopPropagation();
     setContextMenu(null);
     setNodeEdgeContextMenu(null);
   }, []);
 
   const handleNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
-    // Prevent default browser context menu
     event.preventDefault();
     event.stopPropagation();
     
+    // Close the regular context menu if it's open
+    setContextMenu(null);
     setNodeEdgeContextMenu({
       x: event.clientX,
       y: event.clientY
     });
     
-    // Select the node that was right-clicked
     if (!selectedNodes.find(n => n.id === node.id)) {
       setSelectedNodes([node as any]);
       setNodes(nodes.map(n => ({
@@ -1105,16 +1109,16 @@ const deleteSelected = () => {
   }, [selectedNodes, setSelectedNodes, setNodes, nodes]);
 
   const handleEdgeContextMenu = useCallback((event: React.MouseEvent, edge: Edge) => {
-    // Prevent default browser context menu
     event.preventDefault();
     event.stopPropagation();
     
+    // Close the regular context menu if it's open
+    setContextMenu(null);
     setNodeEdgeContextMenu({
       x: event.clientX,
       y: event.clientY
     });
     
-    // Select the edge that was right-clicked
     if (!selectedEdges.find(e => e.id === edge.id)) {
       setSelectedEdges([edge as any]);
       setEdges(edges.map(e => ({
