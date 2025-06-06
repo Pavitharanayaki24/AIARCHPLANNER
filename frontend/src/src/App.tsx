@@ -406,20 +406,22 @@ function ShapesProExampleApp({
   };
 
   const selectAll = () => {
+    // Update nodes
     const updatedNodes = nodes.map(node => ({ ...node, selected: true }));
     const updatedEdges = edges.map(edge => ({ ...edge, selected: true }));
-    
+
+    // Update React Flow's internal state
     setSortedNodes(updatedNodes);
     setNodes(updatedNodes);
-    setEdges(updatedEdges);
     setSelectedNodes(updatedNodes);
-    setSelectedEdges(updatedEdges);
     
-    // Ensure React Flow's internal state is updated
-    const { setNodes: setRFNodes, setEdges: setRFEdges } = useReactFlow();
-    setRFNodes(updatedNodes);
-    setRFEdges(updatedEdges);
-  };  
+    // Update edges state
+    setEdges(updatedEdges);
+    setSelectedEdges(updatedEdges);
+
+    // Push to history for undo/redo
+    pushToHistory(updatedNodes, updatedEdges);
+  };
   
 const deleteSelected = () => {
   const selectedNodeIds = selectedNodes.map((n) => n.id);
@@ -730,30 +732,23 @@ const deleteSelected = () => {
   // Add a handler for edge changes
   const handleEdgesChange = useCallback(
     (changes: any[]) => {
-      const selectedEdgeIds = changes
-        .filter((change: any) => change.type === 'select' && change.selected)
-        .map((change: any) => change.id);
-      const updatedSelectedEdges = edges.filter((e) =>
-        selectedEdgeIds.includes(e.id)
-      );
-      setSelectedEdges(updatedSelectedEdges);
-      pushToHistory(nodes, edges);
       setEdges((eds) => {
-        return eds.map((edge) => {
+        const updatedEdges = eds.map((edge) => {
           const change = changes.find((c) => c.id === edge.id);
           if (change && change.type === 'select') {
             return { ...edge, selected: change.selected };
           }
-          return {
-            ...edge,
-            data: {
-              ...edge.data,
-            },
-          };
+          return edge;
         });
+        
+        // Update selected edges state
+        const newSelectedEdges = updatedEdges.filter(e => e.selected);
+        setSelectedEdges(newSelectedEdges);
+        
+        return updatedEdges;
       });
     },
-    [edges, nodes, pushToHistory, setEdges, setSelectedEdges]
+    [setEdges, setSelectedEdges]
   );
 
   const handleSave = async () => {
@@ -1143,6 +1138,26 @@ const deleteSelected = () => {
     setEdges(edges => edges.map(edge => ({ ...edge, selected: true })));
   }, [setNodes, setEdges]);
 
+  const renderContextMenu = () => {
+    if (!contextMenu) return null;
+    return (
+      <ContextMenu
+        x={contextMenu.x}
+        y={contextMenu.y}
+        onClose={() => setContextMenu(null)}
+        undo={undo}
+        paste={() => handlePaste(contextMenu.x, contextMenu.y)}
+        copy={copy}
+        selectAll={selectAll}
+        selectAllVertices={selectAllVertices}
+        selectAllEdges={selectAllEdges}
+        canUndo={history.length > 0}
+        canPaste={!!copiedElements}
+        canCopy={selectedNodes.length > 0 || selectedEdges.length > 0}
+      />
+    );
+  };
+
   return (
     <NodeContext.Provider
       value={{
@@ -1240,22 +1255,7 @@ const deleteSelected = () => {
         <MessageBox />
         <UserInfoBar />
         <RocketCounter />
-        {contextMenu && (
-          <ContextMenu
-            x={contextMenu.x}
-            y={contextMenu.y}
-            onClose={() => setContextMenu(null)}
-            undo={undo}
-            paste={() => handlePaste(contextMenu.x, contextMenu.y)}
-            copy={handleCopy}
-            selectAll={handleSelectAll}
-            selectAllVertices={handleSelectAllVertices}
-            selectAllEdges={handleSelectAllEdges}
-            canUndo={history.length > 0}
-            canPaste={!!copiedElements}
-            canCopy={nodes.some(node => node.selected) || edges.some(edge => edge.selected)}
-          />
-        )}
+        {renderContextMenu()}
         {nodeEdgeContextMenu && (
           <NodeEdgeContextMenu
             x={nodeEdgeContextMenu.x}
@@ -1275,9 +1275,10 @@ const deleteSelected = () => {
           />
         )}
     <ReactFlow
+      ref={flowRef}
       className="react-flow__pane"
       key={`react-flow-${forceUpdate}`}
-      colorMode={theme} // Always light theme
+      colorMode={theme}
       proOptions={proOptions}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
@@ -1287,8 +1288,8 @@ const deleteSelected = () => {
       onNodeDragStop={onNodeDragStop}
       onEdgesChange={handleEdgesChange}
       onConnect={onConnect}
-      elevateEdgesOnSelect
-      elevateNodesOnSelect
+      elevateEdgesOnSelect={true}
+      elevateNodesOnSelect={true}
       defaultEdgeOptions={defaultEdgeOptions}
       connectionLineType={ConnectionLineType.SmoothStep}
       connectionMode={ConnectionMode.Loose}    
@@ -1306,7 +1307,12 @@ const deleteSelected = () => {
       onNodeContextMenu={handleNodeContextMenu}
       onEdgeContextMenu={handleEdgeContextMenu}
       onPaneContextMenu={onPaneContextMenu}
-    > 
+      onSelectionChange={({ nodes, edges }) => {
+        setSelectedNodes(nodes);
+        setSelectedEdges(edges);
+      }}
+      multiSelectionKeyCode="Control"
+    >
       <Background />
       <HelperLines
         horizontal={helperLineHorizontal}
