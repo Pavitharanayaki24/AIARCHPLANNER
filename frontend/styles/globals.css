@@ -1,0 +1,18 @@
+/* Message Box Types */
+#message-box.info {
+  background-color: #e3f2fd;
+  border: 1px solid #90caf9;
+  color: #1976d2;
+}
+
+#message-box.success {
+  background-color: #e8f5e9;
+  border: 1px solid #a5d6a7;
+  color: #2e7d32;
+}
+
+#message-box.error {
+  background-color: #ffebee;
+  border: 1px solid #ef9a9a;
+  color: #c62828;
+} 
