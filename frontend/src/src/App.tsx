@@ -5,9 +5,13 @@ import { BezierEdge, StraightEdge, StepEdge, SmoothStepEdge, ReactFlow, Backgrou
   DefaultEdgeOptions, useReactFlow, MiniMap, addEdge, useNodesState, Node, Edge, Connection, useEdgesState, applyNodeChanges, NodeChange, OnNodesChange, 
   Viewport,
   OnConnect,
-  EdgeProps} from '@xyflow/react';
+  EdgeProps,
+  EdgeChange,
+  Controls,
+  applyEdgeChanges,
+} from '@xyflow/react';
 import { v4 as uuidv4 } from 'uuid';
-import { NodeContext } from "./NodeContext";
+import { NodeContext, NodeProvider } from './NodeContext';
 import NodeEdgeContextMenu from './components/NodeEdgeContextMenu';
 
 import '@xyflow/react/dist/style.css';
@@ -33,27 +37,17 @@ import CustomSmoothStepEdge from './components/control_points_edges/CustomSmooth
 import CurvedEdge from './components/edges/CurvedEdges';
 import LinearEdge from './components/edges/LinearEdges';
 import OthogonalEdge from './components/edges/OthogonalEdge';
-import TextNode from './components/text-node';
 import ContextMenu from './components/ContextMenu';
 
 const nodeTypes: NodeTypes = {
   'custom-shape': IconNode,
   shape: ShapeNodeComponent,
-  text: TextNode,
 };
 
 // Define edgeTypes outside the component to prevent recreation on each render
-// const edgeTypes = {
-//   curved: CustomBezierEdge,
-//   linear: CustomLinearEdge,
-//   smoothstep: CustomSmoothStepEdge,
-// };
-
-// Define edgeTypes outside the component to prevent recreation on each render
 const edgeTypes = {
-  curved: CurvedEdge,
-  linear: LinearEdge,
-  smoothstep: OthogonalEdge,
+  default: SmoothStepEdge,
+  smoothstep: SmoothStepEdge
 };
 
 const defaultEdgeOptions: DefaultEdgeOptions = {
@@ -137,35 +131,45 @@ function ShapesProExampleApp({
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [nodeEdgeContextMenu, setNodeEdgeContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-    function sortNodesByParentChildRelationship(nodes: ShapeNode[]) {
-      // First, create a map of node ids for easy lookup
-      const nodeMap = new Map(nodes.map(node => [node.id, node]));
+  const [floatingTexts, setFloatingTexts] = useState<Array<{
+    id: string;
+    text: string;
+    position: { x: number; y: number };
+    isEditing: boolean;
+  }>>([]);
 
-      // Sort nodes: parent nodes first
-      return nodes.slice().sort((a, b) => {
-        if (a.parentId && !b.parentId) {
-          return 1; // a is child, comes after b
-        }
-        if (!a.parentId && b.parentId) {
-          return -1; // a is parent, comes before b
-        }
-        if (a.parentId && b.parentId) {
-          return a.parentId.localeCompare(b.parentId); // arbitrary but consistent
-        }
-        return 0; // no parent-child relation
-      });
-    }
+  // Add this state for tracking drag
+  const [isDraggingText, setIsDraggingText] = useState(false);
 
-    const setSortedNodes = (valueOrFn: any[] | ((prev: any[]) => any[])) => {
-      setNodes(prev => {
-        const updatedNodes =
-          typeof valueOrFn === "function"
-            ? (valueOrFn as (prev: any[]) => any[])(prev)
-            : valueOrFn;
-        return sortNodesByParentChildRelationship(updatedNodes);
-      });
-    };
-    
+  function sortNodesByParentChildRelationship(nodes: ShapeNode[]) {
+    // First, create a map of node ids for easy lookup
+    const nodeMap = new Map(nodes.map(node => [node.id, node]));
+
+    // Sort nodes: parent nodes first
+    return nodes.slice().sort((a, b) => {
+      if (a.parentId && !b.parentId) {
+        return 1; // a is child, comes after b
+      }
+      if (!a.parentId && b.parentId) {
+        return -1; // a is parent, comes before b
+      }
+      if (a.parentId && b.parentId) {
+        return a.parentId.localeCompare(b.parentId); // arbitrary but consistent
+      }
+      return 0; // no parent-child relation
+    });
+  }
+
+  const setSortedNodes = (valueOrFn: any[] | ((prev: any[]) => any[])) => {
+    setNodes(prev => {
+      const updatedNodes =
+        typeof valueOrFn === "function"
+          ? (valueOrFn as (prev: any[]) => any[])(prev)
+          : valueOrFn;
+      return sortNodesByParentChildRelationship(updatedNodes);
+    });
+  };
+  
   const pushToHistory = (newNodes: any[], newEdges: Edge[]) => {
     const cloneNode = (node: any): any => ({
       ...node,
@@ -689,7 +693,7 @@ const deleteSelected = () => {
       id: uuidv4(),
       type: 'smoothstep',
       selected: true,
-      data: { label: '' },
+      data: {},  // Empty data object without label
     };
     setEdges((eds) => addEdge(edge, eds));
   }, [setEdges]);
@@ -747,27 +751,23 @@ const deleteSelected = () => {
     );
   };
 
-  // Add a handler for edge changes
-  const handleEdgesChange = useCallback(
-    (changes: any[]) => {
-      setEdges((eds) => {
-        const updatedEdges = eds.map((edge) => {
-          const change = changes.find((c) => c.id === edge.id);
-          if (change && change.type === 'select') {
-            return { ...edge, selected: change.selected };
-          }
-          return edge;
-        });
-        
-        // Update selected edges state
-        const newSelectedEdges = updatedEdges.filter(e => e.selected);
-        setSelectedEdges(newSelectedEdges);
-        
-        return updatedEdges;
+  const handleEdgesChange = useCallback((changes: any[]) => {
+    setEdges((eds) => {
+      const updatedEdges = eds.map((edge) => {
+        const change = changes.find((c) => c.id === edge.id);
+        if (change && change.type === 'select') {
+          return { ...edge, selected: change.selected };
+        }
+        return edge;
       });
-    },
-    [setEdges, setSelectedEdges]
-  );
+      
+      // Update selected edges state
+      const newSelectedEdges = updatedEdges.filter(e => e.selected);
+      setSelectedEdges(newSelectedEdges);
+      
+      return updatedEdges;
+    });
+  }, []);
 
   const handleSave = async () => {
     try {
@@ -876,33 +876,17 @@ const deleteSelected = () => {
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!flowRef.current) return;
     const target = e.target as HTMLElement;
-    if (!target.classList.contains('react-flow__pane')) return;
-
-    const point = screenToFlowCoords(e.clientX, e.clientY, flowRef.current);
     
-    // Create text node at double-click position
-    const newNode: ShapeNode = {
-      id: `text-${uuidv4()}`,
-      type: 'text',
-      position: point,
-      data: { 
-        type: 'text',
-        color: '#3b82f6',
-        text: 'New Text',
-        onTextChange: (newText: string) => {
-          setSortedNodes((nds) =>
-            nds.map((node) =>
-              node.id === newNode.id
-                ? { ...node, data: { ...node.data, text: newText } }
-                : node
-            )
-          );
-        }
-      },
-    };
-
-    setSortedNodes((nds) => [...nds, newNode]);
-    pushToHistory([...nodes, newNode], edges);
+    // Create text box when clicking on the pane (board)
+    if (target.classList.contains('react-flow__pane')) {
+      const point = screenToFlowCoords(e.clientX, e.clientY, flowRef.current);
+      setFloatingTexts(prev => [...prev, {
+        id: `text-${uuidv4()}`,
+        text: '',
+        position: point,
+        isEditing: true
+      }]);
+    }
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -1180,173 +1164,297 @@ const deleteSelected = () => {
     );
   };
 
+  // Add these functions for text box dragging
+  const onFloatingTextDrag = (e: React.DragEvent, textId: string) => {
+    e.preventDefault();
+    if (!flowRef.current) return;
+
+    const point = screenToFlowCoords(e.clientX, e.clientY, flowRef.current);
+    setFloatingTexts(prev => prev.map(text => 
+      text.id === textId ? { ...text, position: point } : text
+    ));
+
+    // Highlight edge when dragging over it
+    const target = e.target as HTMLElement;
+    const edgeElement = target.closest('.react-flow__edge');
+    if (edgeElement && edgeElement instanceof HTMLElement) {
+      edgeElement.style.filter = 'brightness(0.8)';
+      edgeElement.style.strokeWidth = '2px';
+    }
+  };
+
+  const onFloatingTextDrop = (e: React.DragEvent, textId: string) => {
+    e.preventDefault();
+    if (!flowRef.current) return;
+
+    const target = e.target as HTMLElement;
+    const edgeElement = target.closest('.react-flow__edge');
+    
+    // Reset edge styling
+    if (edgeElement && edgeElement instanceof HTMLElement) {
+      edgeElement.style.filter = '';
+      edgeElement.style.strokeWidth = '';
+    }
+    
+    if (edgeElement) {
+      const edgeId = edgeElement.getAttribute('data-testid')?.replace('rf__edge-', '') || '';
+      if (edgeId) {
+        // Get the text content
+        const textBox = floatingTexts.find(t => t.id === textId);
+        if (!textBox) return;
+
+        // Update the edge with the new label
+        setEdges(eds => eds.map(edge => {
+          if (edge.id === edgeId) {
+            return {
+              ...edge,
+              label: textBox.text || 'Text',
+              labelStyle: {
+                fontSize: '11px',
+                padding: '1px 2px',
+                border: '1px dashed #999',
+                background: 'white'
+              }
+            };
+          }
+          return edge;
+        }));
+
+        // Remove the floating text box after attaching
+        setFloatingTexts(prev => prev.filter(t => t.id !== textId));
+      }
+    }
+  };
+
+  const onFloatingTextDragLeave = (e: React.DragEvent) => {
+    const target = e.target as HTMLElement;
+    const edgeElement = target.closest('.react-flow__edge');
+    if (edgeElement && edgeElement instanceof HTMLElement) {
+      edgeElement.style.filter = '';
+      edgeElement.style.strokeWidth = '';
+    }
+  };
+
+  const contextValue = {
+    selectedNode,
+    setSelectedNode,
+    selectedNodes,
+    setSelectedNodes,
+    selectedEdges,
+    setSelectedEdges,
+    setNodes,
+    setSortedNodes,
+    pushToHistory,
+    nodes,
+    edges,
+    setEdges,
+  };
+
   return (
-    <NodeContext.Provider
-      value={{
-        selectedNode,
-        setSelectedNode,
-        selectedNodes,
-        setSelectedNodes,
-        selectedEdges,
-        setSelectedEdges,
-        setNodes,
-        setSortedNodes,
-        pushToHistory,
-        nodes,
-        edges,
-        setEdges,
-      }}
-    >  
-    {selectionBox && flowRef.current && (() => {
-      const topLeft = flowCoordsToScreen(selectionBox.x, selectionBox.y, flowRef.current);
-      const bottomRight = flowCoordsToScreen(selectionBox.x + selectionBox.width, selectionBox.y + selectionBox.height, flowRef.current);
-      const left = Math.min(topLeft.x, bottomRight.x);
-      const top = Math.min(topLeft.y, bottomRight.y);
-      const width = Math.abs(bottomRight.x - topLeft.x);
-      const height = Math.abs(bottomRight.y - topLeft.y);
-      return (
-        <div
-          style={{
-            position: 'absolute',
-            left,
-            top,
-            width,
-            height,
-            border: '1px dashed #333',
-            backgroundColor: 'rgba(0, 0, 255, 0.1)',
-            pointerEvents: 'none',
-            zIndex: 999,
-          }}
-        />
-      );
-    })()}
-    <div ref={flowRef} 
-      onMouseDown={(e) => {
-        const target = e.target as HTMLElement;
-        if (target.classList.contains('react-flow__pane')) {
-          handleCanvasClick();
-        }
-        handleMouseDown(e);
-      }}
-      onContextMenu={onContextMenu}
-      onDoubleClick={handleDoubleClick} 
-      style={{ width: '100%', height: '100vh', position: "relative"  }}
-    > 
-        <Sidebar onClickPlaceIcon={placeIconOnClick}/>  
-        <TopBar
-          title={title}
-          setTitle={setTitle}
-          undo={undo}
-          redo={redo}
-          cut={cut}
-          copy={copy}
-          paste={() => handlePaste(contextMenu?.x || 0, contextMenu?.y || 0)}
-          selectAll={selectAll}
-          deleteSelected={deleteSelected}
-          canUndo={history.length > 0}
-          canRedo={future.length > 0}
-          canCutOrCopy={selectedNodes.length > 0}
-          canPaste={!!copiedElements}
-          copiedObject={copiedElements}
-          canDelete={selectedNodes.length > 0 || selectedEdges.length >0}
-          isManySelected={selectedNodes.length > 0 || selectedEdges.length >0}
-          onPreview={() => setIsPreviewOpen(true)}
-          onSave={handleSave}
-          onLoad={handleLoad}
-        />
-        <div>
-          <RightsidePanel
-            onColorChange={onColorChange}
-            selectedEdge={selectedEdges}
-            onEdgeStyleChange={handleEdgeStyleChange}
-            onClose={handleCloseEdgePanel}
+    <div className="app-container">
+      <NodeProvider value={contextValue}>
+        <div ref={flowRef} 
+          onMouseDown={handleMouseDown}
+          onContextMenu={onContextMenu}
+          onDoubleClick={handleDoubleClick} 
+          style={{ width: '100%', height: '100vh', position: "relative" }}
+        > 
+          <Sidebar onClickPlaceIcon={placeIconOnClick}/>  
+          <TopBar
+            title={title}
+            setTitle={setTitle}
+            undo={undo}
+            redo={redo}
+            cut={cut}
+            copy={copy}
+            paste={() => handlePaste(contextMenu?.x || 0, contextMenu?.y || 0)}
+            selectAll={selectAll}
+            deleteSelected={deleteSelected}
+            canUndo={history.length > 0}
+            canRedo={future.length > 0}
+            canCutOrCopy={selectedNodes.length > 0}
+            canPaste={!!copiedElements}
+            copiedObject={copiedElements}
+            canDelete={selectedNodes.length > 0 || selectedEdges.length >0}
+            isManySelected={selectedNodes.length > 0 || selectedEdges.length >0}
+            onPreview={() => setIsPreviewOpen(true)}
+            onSave={handleSave}
+            onLoad={handleLoad}
           />
-        </div>
-        <CenterBar />
-        <BottomControls />
-        <PreviewModal
-          title={title}
-          isOpen={isPreviewOpen}
-          onClose={() => {
-            setIsPreviewOpen(false);
-            setTimeout(() => {
-              setForceUpdate(prev => prev + 1);
-            }, 100);
-          }}
-        />
-        <MessageBox />
-        <UserInfoBar />
-        <RocketCounter />
-        {renderContextMenu()}
-        {nodeEdgeContextMenu && (
-          <NodeEdgeContextMenu
-            x={nodeEdgeContextMenu.x}
-            y={nodeEdgeContextMenu.y}
-            onClose={() => setNodeEdgeContextMenu(null)}
-            onCopy={(elements) => {
-              setCopiedElements(elements);
-              // Store in localStorage as backup
-              try {
-                localStorage.setItem('copiedElements', JSON.stringify(elements));
-              } catch (e) {
-                console.error('Failed to store copied elements in localStorage:', e);
+          <div>
+            <RightsidePanel
+              onColorChange={onColorChange}
+              selectedEdge={selectedEdges}
+              onEdgeStyleChange={handleEdgeStyleChange}
+              onClose={handleCloseEdgePanel}
+            />
+          </div>
+          <CenterBar />
+          <BottomControls />
+          <PreviewModal
+            title={title}
+            isOpen={isPreviewOpen}
+            onClose={() => {
+              setIsPreviewOpen(false);
+              setTimeout(() => {
+                setForceUpdate(prev => prev + 1);
+              }, 100);
+            }}
+          />
+          <MessageBox />
+          <UserInfoBar />
+          <RocketCounter />
+          {renderContextMenu()}
+          {nodeEdgeContextMenu && (
+            <NodeEdgeContextMenu
+              x={nodeEdgeContextMenu.x}
+              y={nodeEdgeContextMenu.y}
+              onClose={() => setNodeEdgeContextMenu(null)}
+              onCopy={(elements) => {
+                setCopiedElements(elements);
+                // Store in localStorage as backup
+                try {
+                  localStorage.setItem('copiedElements', JSON.stringify(elements));
+                } catch (e) {
+                  console.error('Failed to store copied elements in localStorage:', e);
+                }
+              }}
+              selectedNodes={nodes.filter(node => node.selected)}
+              selectedEdges={edges.filter(edge => edge.selected)}
+            />
+          )}
+          {floatingTexts.map(floatingText => (
+            <div
+              key={floatingText.id}
+              style={{
+                position: 'absolute',
+                left: `${floatingText.position.x}px`,
+                top: `${floatingText.position.y}px`,
+                background: 'white',
+                padding: '1px 2px',
+                border: '1px dashed #999',
+                cursor: floatingText.isEditing ? 'text' : 'move',
+                zIndex: 1000,
+                transform: 'translate(-50%, -50%)',
+                minWidth: '30px',
+                maxWidth: '80px',
+                height: '18px',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center'
+              }}
+              draggable={!floatingText.isEditing}
+              onDragStart={(e) => {
+                const dragImg = document.createElement('div');
+                dragImg.style.opacity = '0';
+                document.body.appendChild(dragImg);
+                e.dataTransfer.setDragImage(dragImg, 0, 0);
+                setTimeout(() => document.body.removeChild(dragImg), 0);
+              }}
+              onDrag={(e) => onFloatingTextDrag(e, floatingText.id)}
+              onDragEnd={() => {}}
+              onDragLeave={onFloatingTextDragLeave}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => onFloatingTextDrop(e, floatingText.id)}
+            >
+              <input
+                type="text"
+                value={floatingText.text}
+                onChange={(e) => setFloatingTexts(prev => prev.map(text => 
+                  text.id === floatingText.id ? { ...text, text: e.target.value } : text
+                ))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    setFloatingTexts(prev => prev.map(text => 
+                      text.id === floatingText.id ? { ...text, isEditing: false } : text
+                    ));
+                  }
+                }}
+                onBlur={() => {
+                  setFloatingTexts(prev => prev.map(text => 
+                    text.id === floatingText.id ? { ...text, isEditing: false } : text
+                  ));
+                }}
+                placeholder="Text"
+                autoFocus
+                style={{
+                  border: 'none',
+                  outline: 'none',
+                  width: '100%',
+                  fontSize: '11px',
+                  padding: '0',
+                  background: 'transparent',
+                  textAlign: 'center'
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFloatingTexts(prev => prev.map(text => 
+                    text.id === floatingText.id ? { ...text, isEditing: true } : text
+                  ));
+                }}
+              />
+            </div>
+          ))}
+          <ReactFlow
+            ref={flowRef}
+            className="react-flow__pane"
+            key={`react-flow-${forceUpdate}`}
+            colorMode={theme}
+            proOptions={proOptions}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onNodeDragStop={onNodeDragStop}
+            onEdgesChange={handleEdgesChange}
+            onConnect={onConnect}
+            elevateEdgesOnSelect={true}
+            elevateNodesOnSelect={true}
+            defaultEdgeOptions={{
+              type: 'smoothstep',
+              style: { stroke: '#000' },
+              labelStyle: {
+                fontSize: '11px',
+                padding: '1px 2px',
+                border: '1px dashed #999',
+                background: 'white'
               }
             }}
-            selectedNodes={nodes.filter(node => node.selected)}
-            selectedEdges={edges.filter(edge => edge.selected)}
-          />
-        )}
-    <ReactFlow
-      ref={flowRef}
-      className="react-flow__pane"
-      key={`react-flow-${forceUpdate}`}
-      colorMode={theme}
-      proOptions={proOptions}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      nodes={nodes}
-      edges={edges}
-      onNodesChange={onNodesChange}
-      onNodeDragStop={onNodeDragStop}
-      onEdgesChange={handleEdgesChange}
-      onConnect={onConnect}
-      elevateEdgesOnSelect={true}
-      elevateNodesOnSelect={true}
-      defaultEdgeOptions={defaultEdgeOptions}
-      connectionLineType={ConnectionLineType.SmoothStep}
-      connectionMode={ConnectionMode.Loose}    
-      panOnScroll={panOnScroll}
-      onDrop={onDrop}
-      snapToGrid={snapToGrid} 
-      snapGrid={[10, 10]} 
-      onDragOver={onDragOver}
-      zoomOnDoubleClick={false}
-      panOnDrag={false}
-      selectNodesOnDrag={false}
-      elementsSelectable={true}
-      onNodeClick={handleNodeClick}
-      onEdgeClick={handleEdgeClick}
-      onNodeContextMenu={handleNodeContextMenu}
-      onEdgeContextMenu={handleEdgeContextMenu}
-      onPaneContextMenu={onPaneContextMenu}
-      onSelectionChange={({ nodes, edges }) => {
-        setSelectedNodes(nodes);
-        setSelectedEdges(edges);
-      }}
-      multiSelectionKeyCode="Control"
-    >
-      <Background />
-      <HelperLines
-        horizontal={helperLineHorizontal}
-        vertical={helperLineVertical}
-        spacingGuides={helperLineSpacingGuides}
-        horizontalEdges={helperLineHorizontalEdges}
-        verticalEdges={helperLineVerticalEdges}
-      />
-      <MiniMap style={{ position: "absolute", bottom: "60px" }} />
-    </ReactFlow>
-  </div>
-  </NodeContext.Provider>
+            connectionLineType={ConnectionLineType.SmoothStep}
+            connectionMode={ConnectionMode.Loose}    
+            panOnScroll={panOnScroll}
+            onDrop={onDrop}
+            snapToGrid={snapToGrid} 
+            snapGrid={[10, 10]} 
+            onDragOver={onDragOver}
+            zoomOnDoubleClick={false}
+            panOnDrag={false}
+            selectNodesOnDrag={false}
+            elementsSelectable={true}
+            onNodeClick={handleNodeClick}
+            onEdgeClick={handleEdgeClick}
+            onNodeContextMenu={handleNodeContextMenu}
+            onEdgeContextMenu={handleEdgeContextMenu}
+            onPaneContextMenu={onPaneContextMenu}
+            onSelectionChange={({ nodes, edges }) => {
+              setSelectedNodes(nodes);
+              setSelectedEdges(edges);
+            }}
+            multiSelectionKeyCode="Control"
+          >
+            <Background />
+            <HelperLines
+              horizontal={helperLineHorizontal}
+              vertical={helperLineVertical}
+              spacingGuides={helperLineSpacingGuides}
+              horizontalEdges={helperLineHorizontalEdges}
+              verticalEdges={helperLineVerticalEdges}
+            />
+          </ReactFlow>
+        </div>
+      </NodeProvider>
+    </div>
   );
 }
 

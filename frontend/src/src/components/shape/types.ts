@@ -12,8 +12,7 @@ export type ShapeType =
   | 'triangle'
   | 'parallelogram'
   | 'plus'
-  | 'dashed-rectangle'
-  | 'text';
+  | 'dashed-rectangle';
 
 export interface BaseNodeData {
   type: ShapeType;
@@ -27,19 +26,9 @@ export interface BaseNodeData {
   [key: string]: unknown;
 }
 
-export interface TextNodeData extends BaseNodeData {
-  type: 'text';
-  text: string;
-  onTextChange: (text: string) => void;
-}
-
-export type NodeData = BaseNodeData | TextNodeData;
+export type NodeData = BaseNodeData;
 
 export type ShapeNode = Node<NodeData>;
-
-export function isTextNodeData(data: NodeData): data is TextNodeData {
-  return data.type === 'text';
-}
 
 export interface ShapeComponentProps extends SVGAttributes<SVGElement> {
   width: number;

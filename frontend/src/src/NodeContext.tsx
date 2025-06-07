@@ -1,6 +1,6 @@
 import React, { useState, ReactNode } from "react";
 import { Edge } from "@xyflow/react";
-import ShapeNode from "./components/shape-node";
+import { ShapeNode } from "./components/shape/types";
 
 type NodeContextType = {
   selectedNode: ShapeNode | null;
@@ -11,12 +11,41 @@ type NodeContextType = {
   setSelectedEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   nodes: ShapeNode[];
   setNodes: React.Dispatch<React.SetStateAction<ShapeNode[]>>;
-  setSortedNodes: (valueOrFn: any[] | ((prev: any[]) => any[])) => void;  edges: Edge[];
+  setSortedNodes: (valueOrFn: any[] | ((prev: any[]) => any[])) => void;
+  edges: Edge[];
   setEdges: React.Dispatch<React.SetStateAction<Edge[]>>;
   pushToHistory: (newNodes: ShapeNode[], newEdges: Edge[]) => void;
 };
 
-export const NodeContext = React.createContext<NodeContextType | null>(null);
+const defaultContext: NodeContextType = {
+  selectedNode: null,
+  setSelectedNode: () => {},
+  selectedNodes: [],
+  setSelectedNodes: () => {},
+  selectedEdges: [],
+  setSelectedEdges: () => {},
+  nodes: [],
+  setNodes: () => {},
+  setSortedNodes: () => {},
+  edges: [],
+  setEdges: () => {},
+  pushToHistory: () => {}
+};
+
+export const NodeContext = React.createContext<NodeContextType>(defaultContext);
+
+type NodeProviderProps = {
+  children: ReactNode;
+  value: NodeContextType;
+};
+
+export const NodeProvider = ({ children, value }: NodeProviderProps) => {
+  return (
+    <NodeContext.Provider value={value}>
+      {children}
+    </NodeContext.Provider>
+  );
+};
 
 export const useNodeContext = () => {
   const context = React.useContext(NodeContext);

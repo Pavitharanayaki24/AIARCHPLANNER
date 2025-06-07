@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { EdgeProps } from '@xyflow/react';
 import { useNodeContext } from '../../NodeContext';
 import { FaSync } from "react-icons/fa";
@@ -11,39 +11,35 @@ const LinearEdge: React.FC<EdgeProps> = ({
   source,
   target,
   sourcePosition,
-  targetPosition,  
+  targetPosition,
   data,
 }) => {
-const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? data.label : '');
+  const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? data.label : '');
   const [isEditing, setIsEditing] = useState(false);
-  const { selectedEdges, setSelectedEdges } = useNodeContext();
+  const { selectedEdges, setSelectedEdges, setSortedNodes } = useNodeContext();
   const pathRef = useRef<SVGPathElement | null>(null);
   const [rotation, setRotation] = useState(0);
   const rotationDragRef = useRef<{ startX: number; startY: number; startAngle: number } | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const spanRef = useRef<HTMLInputElement | null>(null);
   const [inputWidth, setInputWidth] = useState<number>(0);
+  const [labelOffset, setLabelOffset] = useState({ x: 0, y: -20 }); // Default offset above the edge
+  const labelDragRef = useRef<{ startX: number; startY: number; startOffset: { x: number; y: number } } | null>(null);
 
   const isSelected = selectedEdges.some(edge => edge.id === id);
   const strokeColor = isSelected ? '#333' : '#888';
 
-  const getPointAlongPath = (): { x: number; y: number } => {
-    if (pathRef.current) {
-        const totalLength = pathRef.current.getTotalLength();
-        const midpoint = pathRef.current.getPointAtLength(totalLength / 2);
-        return { x: midpoint.x, y: midpoint.y };
-    }
-    return { x: (sourceX + targetX) / 2, y: (sourceY + targetY) / 2 };
-    };
+  const [path] = getStraightPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+  });
 
-    const [path, labelX, labelY] = getStraightPath({
-        sourceX,
-        sourceY,
-        targetX,
-        targetY,
-    });
-
-    const labelPosition = getPointAlongPath();
+  const midPoint = {
+    x: (sourceX + targetX) / 2 + labelOffset.x,
+    y: (sourceY + targetY) / 2 + labelOffset.y
+  };
 
   const handleSelectEdge = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -54,11 +50,44 @@ const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? dat
     });
   };
 
-  // Handle rotation drag start
+  // Handle label drag
+  const onLabelMouseDown = (e: React.MouseEvent) => {
+    if (isEditing) return;
+    e.stopPropagation();
+    
+    labelDragRef.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startOffset: { ...labelOffset }
+    };
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      if (!labelDragRef.current) return;
+
+      const dx = moveEvent.clientX - labelDragRef.current.startX;
+      const dy = moveEvent.clientY - labelDragRef.current.startY;
+
+      setLabelOffset({
+        x: labelDragRef.current.startOffset.x + dx,
+        y: labelDragRef.current.startOffset.y + dy
+      });
+    };
+
+    const onMouseUp = () => {
+      labelDragRef.current = null;
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+  };
+
+  // Handle rotation drag
   const onRotationMouseDown = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const centerX = labelPosition.x + 0; // approximate center X of label box (adjust if needed)
-    const centerY = labelPosition.y + 0; // approximate center Y of label box (adjust if needed)
+    const centerX = midPoint.x;
+    const centerY = midPoint.y;
 
     rotationDragRef.current = {
       startX: e.clientX,
@@ -75,15 +104,12 @@ const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? dat
       const startDx = rotationDragRef.current.startX - centerX;
       const startDy = rotationDragRef.current.startY - centerY;
 
-      // Calculate initial and current angles relative to center
       const startAngleRad = Math.atan2(startDy, startDx);
       const currentAngleRad = Math.atan2(dy, dx);
 
-      // Difference in radians
       const deltaAngle = currentAngleRad - startAngleRad;
-
-      // Convert to degrees and update rotation
       const newRotation = rotationDragRef.current.startAngle + (deltaAngle * 180) / Math.PI;
+
       setRotation(newRotation);
     };
 
@@ -100,54 +126,34 @@ const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? dat
   useEffect(() => {
     if (spanRef.current) {
       const width = spanRef.current.offsetWidth;
-      setInputWidth(width + 10); // add some padding for caret
+      setInputWidth(width + 10);
     }
   }, [label]);
 
   return (
-    <g
-  onClick={(e) => {
-    e.stopPropagation();
-    handleSelectEdge(e);
-  }}
->
+    <g onClick={handleSelectEdge}>
       <path
         ref={pathRef}
         d={path}
-        stroke={strokeColor}
-        strokeWidth={2}
         fill="none"
-        markerEnd={`url(#arrowhead-${id})`}
-        style={{ cursor: 'pointer' }}
-        onDoubleClick={(e) => {
-          e.stopPropagation();
-          setIsEditing(true);
-        }}
+        stroke={strokeColor}
+        strokeWidth={1.5}
+        className="react-flow__edge-path"
       />
-      <defs>
-        <marker
-          id={`arrowhead-${id}`}
-          markerWidth="4"
-          markerHeight="6"
-          refX="3"
-          refY="3"
-          orient="auto"
-          markerUnits="strokeWidth"
-        >
-          <polygon points="0 0, 4 3, 0 6" fill={strokeColor} />
-        </marker>
-      </defs>
 
-      {/* Group label and rotation icon so both rotate together */}
       <g
-        transform={`translate(${labelPosition.x}, ${labelPosition.y}) rotate(${rotation})`}
-        style={{ pointerEvents: isEditing ? 'auto' : 'none' }}
+        transform={`translate(${midPoint.x}, ${midPoint.y}) rotate(${rotation})`}
+        style={{ 
+          pointerEvents: 'all',
+          cursor: isEditing ? 'text' : 'move'
+        }}
+        onMouseDown={onLabelMouseDown}
       >
         <foreignObject
           x={-inputWidth / 2}
-          y={-7}
-          width={inputWidth + 5}
-          height={15}
+          y={-12}
+          width={inputWidth + 10}
+          height={24}
           onDoubleClick={(e) => {
             e.stopPropagation();
             setIsEditing(true);
@@ -160,10 +166,14 @@ const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? dat
               alignItems: 'center',
               fontSize: '12px',
               color: '#000',
-              background: label.trim() === '' ? 'transparent' : 'white',
-              width: inputWidth + 5,
+              background: 'white',
+              border: isSelected ? '1px solid #3182ce' : '1px solid #e2e8f0',
+              borderRadius: '4px',
+              padding: '2px 6px',
+              boxShadow: '0 1px 2px rgba(0,0,0,0.1)',
+              width: '100%',
               height: '100%',
-              pointerEvents: 'auto',
+              cursor: isEditing ? 'text' : 'move',
             }}
           >
             {isEditing ? (
@@ -173,18 +183,22 @@ const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? dat
                   autoFocus
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setIsEditing(false);
+                    }
+                  }}
                   onClick={(e) => e.stopPropagation()}
                   onBlur={() => setIsEditing(false)}
                   style={{
-                    width: inputWidth + 5,
+                    width: '100%',
                     fontSize: '12px',
                     border: 'none',
                     outline: 'none',
-                    background: label.trim() === '' ? 'transparent' : 'white',
+                    background: 'transparent',
                     textAlign: 'center',
                   }}
                 />
-                {/* Hidden span to measure width */}
                 <span
                   ref={spanRef}
                   style={{
@@ -199,28 +213,24 @@ const [label, setLabel] = useState<string>(typeof data?.label === 'string' ? dat
                 </span>
               </>
             ) : (
-              label.trim() === '' ? '' : label
+              <span>{label || 'Add label'}</span>
             )}
           </div>
         </foreignObject>
 
-        {/* Rotation handle positioned relative to center */}
-        {isEditing && (
+        {isSelected && (
           <g
-            transform={`translate(${inputWidth / 2 + 5}, -15)`}
-            style={{ cursor: 'grab', pointerEvents: 'all', userSelect: 'none' }}
+            transform={`translate(${inputWidth / 2 + 15}, 0)`}
+            style={{ cursor: 'grab', pointerEvents: 'all' }}
             onMouseDown={onRotationMouseDown}
           >
-            <FaSync size={14} />
-            <rect
-              x={-10}
-              y={-10}
-              width={20}
-              height={20}
-              fill="transparent"
-              pointerEvents="all"
-              onMouseDown={onRotationMouseDown}
+            <circle
+              r={8}
+              fill="white"
+              stroke="#3182ce"
+              strokeWidth={1}
             />
+            <FaSync size={10} style={{ transform: 'translate(-5px, -5px)' }} />
           </g>
         )}
       </g>
