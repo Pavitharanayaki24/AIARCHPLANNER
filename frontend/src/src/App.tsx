@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useCallback, DragEvent, DragEventHandler, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import type { DragEvent, DragEventHandler } from 'react';
 import { BezierEdge, StraightEdge, StepEdge, SmoothStepEdge, ReactFlow, Background, ReactFlowProvider, ConnectionLineType, MarkerType, ConnectionMode, Panel, NodeTypes, 
   DefaultEdgeOptions, useReactFlow, MiniMap, addEdge, useNodesState, Node, Edge, Connection, useEdgesState, applyNodeChanges, NodeChange, OnNodesChange, 
   Viewport,
@@ -38,10 +39,17 @@ import CurvedEdge from './components/edges/CurvedEdges';
 import LinearEdge from './components/edges/LinearEdges';
 import OthogonalEdge from './components/edges/OthogonalEdge';
 import ContextMenu from './components/ContextMenu';
+import TextNode from './components/TextNode';
+import { TextNodeType } from './components/TextNode';
 
 const nodeTypes: NodeTypes = {
   'custom-shape': IconNode,
   shape: ShapeNodeComponent,
+  square: IconNode,
+  triangle: IconNode,
+  circle: IconNode,
+  diamond: IconNode,
+  text: TextNode,
 };
 
 // Define edgeTypes outside the component to prevent recreation on each render
@@ -81,9 +89,9 @@ interface CopiedElements {
 }
 
 function ShapesProExampleApp({
-  theme = 'light', // Always light theme
-  snapToGrid = true, // Always snap to grid
-  panOnScroll = true, // Always pan on scroll
+  theme = 'light',
+  snapToGrid = true,
+  panOnScroll = true,
   zoomOnDoubleClick = false,
 }: ExampleProps) {
   const [nodes, setNodes] = useNodesState<ShapeNode>([]);
@@ -130,16 +138,6 @@ function ShapesProExampleApp({
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [nodeEdgeContextMenu, setNodeEdgeContextMenu] = useState<{ x: number; y: number } | null>(null);
-
-  const [floatingTexts, setFloatingTexts] = useState<Array<{
-    id: string;
-    text: string;
-    position: { x: number; y: number };
-    isEditing: boolean;
-  }>>([]);
-
-  // Add this state for tracking drag
-  const [isDraggingText, setIsDraggingText] = useState(false);
 
   function sortNodesByParentChildRelationship(nodes: ShapeNode[]) {
     // First, create a map of node ids for easy lookup
@@ -873,20 +871,33 @@ const deleteSelected = () => {
     };
   };
 
+  // Update the handleDoubleClick function
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (!flowRef.current) return;
-    const target = e.target as HTMLElement;
     
-    // Create text box when clicking on the pane (board)
-    if (target.classList.contains('react-flow__pane')) {
-      const point = screenToFlowCoords(e.clientX, e.clientY, flowRef.current);
-      setFloatingTexts(prev => [...prev, {
-        id: `text-${uuidv4()}`,
-        text: '',
-        position: point,
-        isEditing: true
-      }]);
-    }
+    // Get the mouse position relative to the flow container
+    const bounds = flowRef.current.getBoundingClientRect();
+    const position = screenToFlowPosition({
+      x: e.clientX - bounds.left,
+      y: e.clientY - bounds.top,
+    });
+
+    // Create a new text node
+    const newNode = {
+      id: `text-${uuidv4()}`,
+      type: 'text',
+      position,
+      data: { 
+        label: 'Text', 
+        isSelected: true,
+        type: 'text',
+        color: '#000000'
+      },
+      width: 100,
+      height: 40,
+    };
+
+    setNodes((nodes) => [...nodes, newNode as ShapeNode]);
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -1042,6 +1053,7 @@ const deleteSelected = () => {
     }
   };
 
+  // Update the handleCanvasClick function to handle text node deselection
   const handleCanvasClick = () => {
     setSelectedNode(null);
     setSelectedNodes([]);
@@ -1072,6 +1084,7 @@ const deleteSelected = () => {
     setNodeEdgeContextMenu(null);
   }, []);
 
+  // Update the handleNodeContextMenu function to handle text nodes
   const handleNodeContextMenu = useCallback((event: React.MouseEvent, node: Node) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1164,77 +1177,6 @@ const deleteSelected = () => {
     );
   };
 
-  // Add these functions for text box dragging
-  const onFloatingTextDrag = (e: React.DragEvent, textId: string) => {
-    e.preventDefault();
-    if (!flowRef.current) return;
-
-    const point = screenToFlowCoords(e.clientX, e.clientY, flowRef.current);
-    setFloatingTexts(prev => prev.map(text => 
-      text.id === textId ? { ...text, position: point } : text
-    ));
-
-    // Highlight edge when dragging over it
-    const target = e.target as HTMLElement;
-    const edgeElement = target.closest('.react-flow__edge');
-    if (edgeElement && edgeElement instanceof HTMLElement) {
-      edgeElement.style.filter = 'brightness(0.8)';
-      edgeElement.style.strokeWidth = '2px';
-    }
-  };
-
-  const onFloatingTextDrop = (e: React.DragEvent, textId: string) => {
-    e.preventDefault();
-    if (!flowRef.current) return;
-
-    const target = e.target as HTMLElement;
-    const edgeElement = target.closest('.react-flow__edge');
-    
-    // Reset edge styling
-    if (edgeElement && edgeElement instanceof HTMLElement) {
-      edgeElement.style.filter = '';
-      edgeElement.style.strokeWidth = '';
-    }
-    
-    if (edgeElement) {
-      const edgeId = edgeElement.getAttribute('data-testid')?.replace('rf__edge-', '') || '';
-      if (edgeId) {
-        // Get the text content
-        const textBox = floatingTexts.find(t => t.id === textId);
-        if (!textBox) return;
-
-        // Update the edge with the new label
-        setEdges(eds => eds.map(edge => {
-          if (edge.id === edgeId) {
-            return {
-              ...edge,
-              label: textBox.text || 'Text',
-              labelStyle: {
-                fontSize: '11px',
-                padding: '1px 2px',
-                border: '1px dashed #999',
-                background: 'white'
-              }
-            };
-          }
-          return edge;
-        }));
-
-        // Remove the floating text box after attaching
-        setFloatingTexts(prev => prev.filter(t => t.id !== textId));
-      }
-    }
-  };
-
-  const onFloatingTextDragLeave = (e: React.DragEvent) => {
-    const target = e.target as HTMLElement;
-    const edgeElement = target.closest('.react-flow__edge');
-    if (edgeElement && edgeElement instanceof HTMLElement) {
-      edgeElement.style.filter = '';
-      edgeElement.style.strokeWidth = '';
-    }
-  };
-
   const contextValue = {
     selectedNode,
     setSelectedNode,
@@ -1252,14 +1194,15 @@ const deleteSelected = () => {
 
   return (
     <div className="app-container">
-      <NodeProvider value={contextValue}>
-        <div ref={flowRef} 
+      <NodeContext.Provider value={contextValue}>
+        <div 
+          ref={flowRef}
           onMouseDown={handleMouseDown}
           onContextMenu={onContextMenu}
-          onDoubleClick={handleDoubleClick} 
+          onDoubleClick={handleDoubleClick}
           style={{ width: '100%', height: '100vh', position: "relative" }}
-        > 
-          <Sidebar onClickPlaceIcon={placeIconOnClick}/>  
+        >
+          <Sidebar onClickPlaceIcon={placeIconOnClick} />
           <TopBar
             title={title}
             setTitle={setTitle}
@@ -1275,8 +1218,8 @@ const deleteSelected = () => {
             canCutOrCopy={selectedNodes.length > 0}
             canPaste={!!copiedElements}
             copiedObject={copiedElements}
-            canDelete={selectedNodes.length > 0 || selectedEdges.length >0}
-            isManySelected={selectedNodes.length > 0 || selectedEdges.length >0}
+            canDelete={selectedNodes.length > 0 || selectedEdges.length > 0}
+            isManySelected={selectedNodes.length > 0 || selectedEdges.length > 0}
             onPreview={() => setIsPreviewOpen(true)}
             onSave={handleSave}
             onLoad={handleLoad}
@@ -1312,7 +1255,6 @@ const deleteSelected = () => {
               onClose={() => setNodeEdgeContextMenu(null)}
               onCopy={(elements) => {
                 setCopiedElements(elements);
-                // Store in localStorage as backup
                 try {
                   localStorage.setItem('copiedElements', JSON.stringify(elements));
                 } catch (e) {
@@ -1323,78 +1265,6 @@ const deleteSelected = () => {
               selectedEdges={edges.filter(edge => edge.selected)}
             />
           )}
-          {floatingTexts.map(floatingText => (
-            <div
-              key={floatingText.id}
-              style={{
-                position: 'absolute',
-                left: `${floatingText.position.x}px`,
-                top: `${floatingText.position.y}px`,
-                background: 'white',
-                padding: '1px 2px',
-                border: '1px dashed #999',
-                cursor: floatingText.isEditing ? 'text' : 'move',
-                zIndex: 1000,
-                transform: 'translate(-50%, -50%)',
-                minWidth: '30px',
-                maxWidth: '80px',
-                height: '18px',
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center'
-              }}
-              draggable={!floatingText.isEditing}
-              onDragStart={(e) => {
-                const dragImg = document.createElement('div');
-                dragImg.style.opacity = '0';
-                document.body.appendChild(dragImg);
-                e.dataTransfer.setDragImage(dragImg, 0, 0);
-                setTimeout(() => document.body.removeChild(dragImg), 0);
-              }}
-              onDrag={(e) => onFloatingTextDrag(e, floatingText.id)}
-              onDragEnd={() => {}}
-              onDragLeave={onFloatingTextDragLeave}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={(e) => onFloatingTextDrop(e, floatingText.id)}
-            >
-              <input
-                type="text"
-                value={floatingText.text}
-                onChange={(e) => setFloatingTexts(prev => prev.map(text => 
-                  text.id === floatingText.id ? { ...text, text: e.target.value } : text
-                ))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    setFloatingTexts(prev => prev.map(text => 
-                      text.id === floatingText.id ? { ...text, isEditing: false } : text
-                    ));
-                  }
-                }}
-                onBlur={() => {
-                  setFloatingTexts(prev => prev.map(text => 
-                    text.id === floatingText.id ? { ...text, isEditing: false } : text
-                  ));
-                }}
-                placeholder="Text"
-                autoFocus
-                style={{
-                  border: 'none',
-                  outline: 'none',
-                  width: '100%',
-                  fontSize: '11px',
-                  padding: '0',
-                  background: 'transparent',
-                  textAlign: 'center'
-                }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFloatingTexts(prev => prev.map(text => 
-                    text.id === floatingText.id ? { ...text, isEditing: true } : text
-                  ));
-                }}
-              />
-            </div>
-          ))}
           <ReactFlow
             ref={flowRef}
             className="react-flow__pane"
@@ -1453,7 +1323,7 @@ const deleteSelected = () => {
             />
           </ReactFlow>
         </div>
-      </NodeProvider>
+      </NodeContext.Provider>
     </div>
   );
 }
